@@ -7,6 +7,9 @@ from collections import OrderedDict
 from pathlib import Path
 from distutils.version import LooseVersion as Version
 
+# XXX Debugging
+import traceback
+
 PROGPATH = Path(sys.argv[0])
 PROGNAME = PROGPATH.stem
 
@@ -267,6 +270,7 @@ class GESTURE:
         self.name = type(self).__name__
         self.motions = OrderedDict()
         self.has_extended = False
+        self.handle = self.__class__.__name__
 
     def add(self, motion, fingers, command):
         'Add a configured motion command for this gesture'
@@ -299,6 +303,9 @@ class GESTURE:
         self.data = [0.0, 0.0]
         self.starttime = monotonic()
 
+    def end(self):
+        return
+
     def action(self, motion):
         'Action a motion command for this gesture'
         command = self.motions.get((motion, self.fingers)) or \
@@ -318,13 +325,14 @@ class GESTURE:
         if command and not args.debug:
             command.run()
 
+
 @add_gesture_handler
 class SWIPE(GESTURE):
     'Class to handle this type of gesture'
     SUPPORTED_MOTIONS = ('left', 'right', 'up', 'down',
             'left_up', 'right_up', 'left_down', 'right_down')
     extended_text = '_'
-
+    
     def update(self, coords):
         'Update this gesture for a motion'
         # Ignore this update if we can not parse the numbers we expect
@@ -361,6 +369,60 @@ class SWIPE(GESTURE):
                 motion = ('left_' if x < 0 else 'right_') + motion
 
         self.action(motion)
+
+@add_gesture_handler
+class SCROLL(GESTURE):
+    'Class to handle this type of gesture'
+    # FIXME Combine with SWIPE class above?
+    SUPPORTED_MOTIONS = ('left', 'right', 'up', 'down')
+    extended_text = '_'
+
+    def __init__(self):
+        GESTURE.__init__(self)
+        self.handle = "SWIPE"
+        return
+
+    def update(self, coords):
+        'Update our scroll action'
+        # Ignore this update if we can not parse the numbers we expect
+        try:
+            x = float(coords[2])
+            y = float(coords[3])
+        except (ValueError, IndexError):
+            return False
+
+        self.data[0] += x
+        self.data[1] += y
+
+        x, y = self.data
+        abx = abs(x)
+        aby = abs(y)
+
+        # Require absolute distance movement beyond a small thresh-hold.
+        if abx**2 + aby**2 < abzsquare:
+            return False # XXX Return true here instead?
+
+        # Discriminate left/right or up/down.
+        # If significant movement in both planes the consider it a
+        # oblique swipe (but only if any are configured)
+        if abx > aby:
+            motion = 'left' if x < 0 else 'right'
+            if self.has_extended and abx > 0 and aby / abx > OBLIQUE_RATIO:
+                motion += '_up' if y < 0 else '_down'
+        else:
+            motion = 'up' if y < 0 else 'down'
+            if self.has_extended and aby > 0 and abx / aby > OBLIQUE_RATIO:
+                motion = ('left_' if x < 0 else 'right_') + motion
+
+        self.action(motion, x, y)
+        return True
+
+    
+    def action(self, motion, x, y):
+        'TODO'
+        print('Swipe {} ({}, {})'.format(motion, x, y))
+                
+        return
 
 @add_gesture_handler
 class PINCH(GESTURE):
@@ -611,10 +673,17 @@ for line in cmd.stdout:
                     params), file=sys.stderr)
 
     elif event == 'BEGIN':
+        
+        # FIXME I am here, how to handle both 
+        # swipe/scroll obects matching
+        # Return all where cls.handle == gesture
         handler = handlers.get(gesture)
+        
+
         if handler:
             handler.begin(fingers)
         else:
+            # FIXME remove this could be annoying in the future
             print('Unknown gesture received: {}.'.format(gesture),
                     file=sys.stderr)
     elif event == 'END':
