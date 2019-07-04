@@ -327,7 +327,7 @@ class GESTURE:
 
 
 @add_gesture_handler
-class SWIPE(GESTURE):
+class SWIPEXXX(GESTURE):
     'Class to handle this type of gesture'
     SUPPORTED_MOTIONS = ('left', 'right', 'up', 'down',
             'left_up', 'right_up', 'left_down', 'right_down')
@@ -371,7 +371,7 @@ class SWIPE(GESTURE):
         self.action(motion)
 
 @add_gesture_handler
-class SCROLL(GESTURE):
+class SWIPE(GESTURE):
     'Class to handle this type of gesture'
     # FIXME Combine with SWIPE class above?
     SUPPORTED_MOTIONS = ('left', 'right', 'up', 'down')
@@ -393,35 +393,36 @@ class SCROLL(GESTURE):
 
         self.data[0] += x
         self.data[1] += y
-
-        x, y = self.data
-        abx = abs(x)
-        aby = abs(y)
+        abx = abs(self.data[0])
+        aby = abs(self.data[1])
 
         # Require absolute distance movement beyond a small thresh-hold.
         if abx**2 + aby**2 < abzsquare:
             return False # XXX Return true here instead?
 
-        # Discriminate left/right or up/down.
-        # If significant movement in both planes the consider it a
-        # oblique swipe (but only if any are configured)
+        # TODO change to horizontal/vertical movements?
+        # Discriminate axis of movement.
+        scaling = 5
         if abx > aby:
             motion = 'left' if x < 0 else 'right'
-            if self.has_extended and abx > 0 and aby / abx > OBLIQUE_RATIO:
-                motion += '_up' if y < 0 else '_down'
+            self.action(motion, round(abs(x) / scaling))
         else:
             motion = 'up' if y < 0 else 'down'
-            if self.has_extended and aby > 0 and abx / aby > OBLIQUE_RATIO:
-                motion = ('left_' if x < 0 else 'right_') + motion
+            self.action(motion, round(abs(y) / scaling))
 
-        self.action(motion, x, y)
         return True
 
     
-    def action(self, motion, x, y):
+    def action(self, motion, val):
         'TODO'
-        print('Swipe {} ({}, {})'.format(motion, x, y))
-                
+        args = []
+        if motion == 'up':
+            args = ['amixer', '-D', 'pulse', 'sset', 'Master', '{}%+'.format(val)]
+        else:
+            args = ['amixer', '-D', 'pulse', 'sset', 'Master', '{}%-'.format(val)]
+
+        run(args, block=False)
+
         return
 
 @add_gesture_handler
