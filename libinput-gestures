@@ -7,9 +7,6 @@ from collections import OrderedDict
 from pathlib import Path
 from distutils.version import LooseVersion as Version
 
-# XXX Debugging
-import traceback
-
 PROGPATH = Path(sys.argv[0])
 PROGNAME = PROGPATH.stem
 
@@ -171,15 +168,39 @@ def get_device(name):
 class COMMAND:
     'Generic command handler'
     def __init__(self, args):
+        self.scaling = 1
+        
+        # Check if scaling is defined
+        # TODO floating point numbers?
+        match = re.match("^scaling:(\d+)", args[0])
+        if match:
+            args.pop(0)
+            self.scaling = match.group(1)
+            
         self.reprstr = ' '.join(args)
+        
+        # Check is this is updatable command
+        self.update = False
+        for i, arg in enumerate(args):
+            # TODO Need a better name than val
+            if i > 0 and re.match("\{val\}", arg):
+                self.update = True
 
         # Expand '~' and env vars in executable command name
         args[0] = os.path.expandvars(os.path.expanduser(args[0]))
         self.argslist = args
 
-    def run(self):
+    def run(self, val):
         'Run this command + arguments'
-        run(self.argslist, block=False)
+        args = self.argslist
+
+        # Substitute value for command with scaling
+        if self.update and val:
+            val = round(val / self.scaling)
+            for i, arg in enumerate(args):
+                if i > 0:
+                    args[i] = re.sub("\{val\}", val, arg)
+        run(args, block=False)
 
     def __str__(self):
         'Return string representation'
@@ -270,7 +291,6 @@ class GESTURE:
         self.name = type(self).__name__
         self.motions = OrderedDict()
         self.has_extended = False
-        self.handle = self.__class__.__name__
 
     def add(self, motion, fingers, command):
         'Add a configured motion command for this gesture'
@@ -302,9 +322,6 @@ class GESTURE:
         self.fingers = fingers
         self.data = [0.0, 0.0]
         self.starttime = monotonic()
-
-    def end(self):
-        return
 
     def action(self, motion):
         'Action a motion command for this gesture'
@@ -379,7 +396,6 @@ class SWIPE(GESTURE):
 
     def __init__(self):
         GESTURE.__init__(self)
-        self.handle = "SWIPE"
         return
 
     def update(self, coords):
@@ -393,6 +409,8 @@ class SWIPE(GESTURE):
 
         self.data[0] += x
         self.data[1] += y
+
+        
         abx = abs(self.data[0])
         aby = abs(self.data[1])
 
@@ -412,6 +430,8 @@ class SWIPE(GESTURE):
 
         return True
 
+    def end(self):
+        return
     
     def action(self, motion, val):
         'TODO'
@@ -674,9 +694,6 @@ for line in cmd.stdout:
                     params), file=sys.stderr)
 
     elif event == 'BEGIN':
-        
-        # FIXME I am here, how to handle both 
-        # swipe/scroll obects matching
         # Return all where cls.handle == gesture
         handler = handlers.get(gesture)
         
